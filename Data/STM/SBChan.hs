@@ -186,11 +186,19 @@ peekSBChan = undefined
 -- "Control.Concurrent.STM.TBQueue" is different: it will 'retry' if the queue
 -- is full.
 unGetSBChan :: ItemSize a => SBChan a -> a -> STM ()
-unGetSBChan = undefined
+unGetSBChan SBC{..} a = do
+    ReadEnd{..} <- readTVar readEnd
+    readPtr' <- TList.cons a readPtr
+    writeTVar readEnd $! ReadEnd
+        { readPtr  = readPtr'
+        , readSize = readSize - itemSize a
+        }
 
 -- | Return 'True' if the channel is empty.
 isEmptySBChan :: SBChan a -> STM Bool
-isEmptySBChan = undefined
+isEmptySBChan SBC{..} = do
+    ReadEnd{..} <- readTVar readEnd
+    TList.null readPtr
 
 -- | Variant of 'readSBChan' which does not 'retry'.  Instead, it returns
 -- 'Nothing' if the channel is empty.
