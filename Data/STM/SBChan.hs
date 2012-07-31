@@ -113,6 +113,14 @@ class ItemSize a where
     -- invalidations.
     itemSize :: a -> Int
 
+-- | Wrapper for items where @'itemSize' item = 1@.  This helps you use
+-- 'SBChan' as a channel with a maximum /number/ of items.
+newtype SBCItem a = SBCItem { unSBCItem :: a }
+    deriving Typeable
+
+instance ItemSize (SBCItem a) where
+    itemSize _ = 1
+
 ------------------------------------------------------------------------
 
 -- | Create a new, empty 'SBChan', with the given size limit.
@@ -385,14 +393,3 @@ satisfyLimitSBChan SBC{..} = do
                 , chanLimit = chanLimit
                 }
             return droppedCount
-
-------------------------------------------------------------------------
--- Convenience
-
--- | Wrapper for items where @'itemSize' item = 1@.  This helps you use
--- 'SBChan' as a channel with a maximum /number/ of items.
-newtype SBCItem a = SBCItem { unSBCItem :: a }
-    deriving Typeable
-
-instance ItemSize (SBCItem a) where
-    itemSize _ = 1
