@@ -224,15 +224,23 @@ tryWriteSBChan SBC{..} x = do
         else do
             ReadEnd{..} <- readTVar readEnd
             let writeSize'' = writeSize' - readSize
-            if writeSize'' <= chanLimit
-                then do
+            let syncAndAppend = do
                     writeTVar readEnd $! ReadEnd
                         { readPtr  = readPtr
                         , readSize = 0
                         }
                     appendWriteEnd writeEnd we x writeSize''
                     return True
-                else return False
+            if writeSize'' <= chanLimit
+                then syncAndAppend
+                else do
+                    -- The item does not fit.  However, we want to insert it
+                    -- anyway if the channel is currently empty
+                    -- (see documentation of 'writeSBChan').
+                    empty <- TList.null readPtr
+                    if empty
+                        then syncAndAppend
+                        else return False
 
 appendWriteEnd :: TVar (WriteEnd a) -> WriteEnd a -> a -> Int -> STM ()
 appendWriteEnd var WriteEnd{..} x writeSize' = do
