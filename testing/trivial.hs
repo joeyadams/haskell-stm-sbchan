@@ -72,6 +72,50 @@ test7 = do
     atomically $ unGetSBChan chan $ SBCItem 0
     dumpSBChanInts chan
 
+newtype V = V Int
+
+instance ItemSize V where
+    itemSize (V n) = n
+
+test8 :: IO ()
+test8 = do
+    chan <- newSBChanIO 10
+
+    -- Yes, we *are* allowed to write this item, since it is the only item
+    -- right now.
+    True <- atomically $ tryWriteSBChan chan $ V 100
+
+    -- However, we can't write anything else now.
+    False <- atomically $ tryWriteSBChan chan $ V 0
+
+    atomically $ cramSBChan chan $ V 0
+    1 <- atomically $ satisfyLimitSBChan chan
+
+    True  <- atomically $ tryWriteSBChan chan $ V 1
+    True  <- atomically $ tryWriteSBChan chan $ V 2
+    True  <- atomically $ tryWriteSBChan chan $ V 3
+    4     <- atomically $ rollSBChan chan $ V 100
+    V 100 <- atomically $ peekSBChan chan
+    return ()
+
+test9 :: IO ()
+test9 = do
+    chan <- newSBChanIO 10
+    True  <- atomically $ tryWriteSBChan chan $ V 1
+    True  <- atomically $ tryWriteSBChan chan $ V 2
+    True  <- atomically $ tryWriteSBChan chan $ V 3
+    atomically $ cramSBChan chan $ V 100
+    False <- atomically $ tryWriteSBChan chan $ V 0
+    False <- atomically $ tryWriteSBChan chan $ V 0
+
+    3     <- atomically $ satisfyLimitSBChan chan
+    False <- atomically $ tryWriteSBChan chan $ V 0
+
+    V 100 <- atomically $ readSBChan chan
+    True  <- atomically $ tryWriteSBChan chan $ V 0
+
+    return ()
+
 main :: IO ()
 main = mapM_ runTest
     [ "test1" # test1
@@ -81,6 +125,8 @@ main = mapM_ runTest
     , "test5" # test5
     , "test6" # test6
     , "test7" # test7
+    , "test8" # test8
+    , "test9" # test9
     ]
   where
     (#) = (,)
