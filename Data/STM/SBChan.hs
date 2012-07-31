@@ -188,22 +188,22 @@ peekSBChan = undefined
 unGetSBChan :: ItemSize a => SBChan a -> a -> STM ()
 unGetSBChan = undefined
 
--- | Return @True@ if the channel is empty.
+-- | Return 'True' if the channel is empty.
 isEmptySBChan :: SBChan a -> STM Bool
 isEmptySBChan = undefined
 
 -- | Variant of 'readSBChan' which does not 'retry'.  Instead, it returns
--- @Nothing@ if the channel is empty.
+-- 'Nothing' if the channel is empty.
 tryReadSBChan :: ItemSize a => SBChan a -> STM (Maybe a)
 tryReadSBChan = undefined
 
 -- | Variant of 'writeSBChan' which does not 'retry'.  Instead, it returns
--- @False@ if the item does not fit.
+-- 'False' if the item does not fit.
 tryWriteSBChan :: ItemSize a => SBChan a -> a -> STM Bool
 tryWriteSBChan = undefined
 
 -- | Variant of 'peekSBChan' which does not 'retry'.  Instead, it returns
--- @Nothing@ if the channel is empty.
+-- 'Nothing' if the channel is empty.
 tryPeekSBChan :: SBChan a -> STM (Maybe a)
 tryPeekSBChan = undefined
 
