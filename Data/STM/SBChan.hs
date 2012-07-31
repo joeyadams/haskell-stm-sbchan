@@ -1,4 +1,11 @@
--- | FIFO queue for STM, bounded by the total \"size\" of the items.
+-- |
+-- Module:      Data.STM.SBChan
+-- Copyright:   (c) Joseph Adams 2012
+-- License:     BSD3
+-- Maintainer:  joeyadams3.14159@gmail.com
+-- Portability: Requires STM
+--
+-- FIFO queue for STM, bounded by the total \"size\" of the items.
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE RecordWildCards #-}
 module Data.STM.SBChan (
