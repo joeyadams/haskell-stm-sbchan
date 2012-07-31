@@ -6,6 +6,7 @@
 -- Portability: Requires STM
 --
 -- FIFO queue for STM, bounded by the total \"size\" of the items.
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE RecordWildCards #-}
 module Data.STM.SBChan (
@@ -223,20 +224,20 @@ tryWriteSBChan SBC{..} x = do
             return True
         else do
             ReadEnd{..} <- readTVar readEnd
-            let writeSize'' = writeSize' - readSize
-            let syncAndAppend = do
-                    writeTVar readEnd $! ReadEnd
-                        { readPtr  = readPtr
-                        , readSize = 0
-                        }
-                    appendWriteEnd writeEnd we x writeSize''
-                    return True
+            let chanSize' = writeSize' - readSize
+
             -- If the item does not fit, but the channel is empty, we want to
             -- insert it anyway.  readPtr == writePtr is an optimized way to
             -- test if the channel is empty when we've already read both
             -- 'readEnd' and 'writeEnd'.
-            if writeSize'' <= chanLimit || readPtr == writePtr
-                then syncAndAppend
+            if chanSize' <= chanLimit || readPtr == writePtr
+                then do
+                    writeTVar readEnd $! ReadEnd
+                        { readPtr  = readPtr
+                        , readSize = 0
+                        }
+                    appendWriteEnd writeEnd we x chanSize'
+                    return True
                 else return False
 
 appendWriteEnd :: TVar (WriteEnd a) -> WriteEnd a -> a -> Int -> STM ()
@@ -277,13 +278,69 @@ cramSBChan SBC{..} x = do
                     appendWriteEnd writeEnd we x (writeSize' - readSize)
 
 -- | Like 'writeSBChan', but if the channel is full, drop items from the
--- beginning of the channel until there is enough room for the new item (or
--- until the channel is empty).  This will always succeed, and will not
+-- beginning of the channel until there is enough room for the new item
+-- (or until the channel is empty).  This will always succeed, and will not
 -- 'retry'.
 --
 -- Return the number of items dropped.
 rollSBChan :: ItemSize a => SBChan a -> a -> STM Int
-rollSBChan = undefined
+rollSBChan SBC{..} x = do
+    we@WriteEnd{..} <- readTVar writeEnd
+    let writeSize' = writeSize + itemSize x
+    if writeSize' <= chanLimit
+        then do
+            appendWriteEnd writeEnd we x writeSize'
+            return 0
+        else do
+            ReadEnd{..} <- readTVar readEnd
+            let chanSize' = writeSize' - readSize
+                quota     = chanSize' - chanLimit
+                    -- quota may very well be negative, in which case
+                    -- dropItems won't do anything.
+            (readPtr', droppedSize, droppedCount)
+                <- dropItems readPtr quota
+            writeTVar readEnd $! ReadEnd
+                { readPtr  = readPtr'
+                , readSize = 0
+                }
+            appendWriteEnd writeEnd we x (chanSize' - droppedSize)
+            return droppedCount
+
+-- | Drop items from the 'TList' until the given quota is reached.  Return the
+-- new beginning of the list, the total size of the items dropped (which will
+-- be @>= quota@, unless we reached the end of the list first), and the number
+-- of items dropped.
+dropItems :: ItemSize a => TList a -> Int -> STM (TList a, Int, Int)
+dropItems start quota =
+    loop 0 0 start
+  where
+    loop !total !count ptr
+        | total >= quota = done
+        | otherwise      = TList.uncons done next ptr
+      where
+        next x xs = loop (total + itemSize x) (count + 1) xs
+        done      = return (ptr, total, count)
+
+-- | Like 'dropItems', but stop before removing the last item.
+dropItemsExceptLast :: ItemSize a
+                    => TList a  -- ^ Beginning of list
+                    -> TList a  -- ^ End of list (pointer to a hole)
+                    -> Int      -- ^ Quota
+                    -> STM (TList a, Int, Int)
+                                -- ^ ( New beginning of list
+                                --   , total size of items dropped
+                                --   , number of items dropped
+                                --   )
+dropItemsExceptLast start end quota =
+    loop 0 0 start
+  where
+    loop !total !count ptr
+        | total >= quota = done
+        | otherwise      = TList.uncons done next ptr
+      where
+        next x xs | xs == end = done
+                  | otherwise = loop (total + itemSize x) (count + 1) xs
+        done = return (ptr, total, count)
 
 -- | Get the current limit on total size of items in the channel.
 getLimitSBChan :: SBChan a -> STM Int
@@ -295,8 +352,31 @@ setLimitSBChan = undefined
 
 -- | Drop items from the beginning of the channel until the channel's size
 -- limit is satisfied, or until there is only one item left in the channel.
-satisfyLimitSBChan :: ItemSize a => SBChan a -> STM ()
-satisfyLimitSBChan = undefined
+--
+-- Return the number of items dropped.
+satisfyLimitSBChan :: ItemSize a => SBChan a -> STM Int
+satisfyLimitSBChan SBC{..} = do
+    WriteEnd{..} <- readTVar writeEnd
+    if writeSize <= chanLimit
+        then return 0
+        else do
+            ReadEnd{..} <- readTVar readEnd
+            let chanSize = writeSize - readSize
+                quota    = chanSize - chanLimit
+                    -- quota may very well be negative, in which case
+                    -- dropItems won't do anything.
+            (readPtr', droppedSize, droppedCount)
+                <- dropItemsExceptLast readPtr writePtr quota
+            writeTVar readEnd $! ReadEnd
+                { readPtr  = readPtr'
+                , readSize = 0
+                }
+            writeTVar writeEnd $! WriteEnd
+                { writePtr  = writePtr
+                , writeSize = chanSize - droppedSize
+                , chanLimit = chanLimit
+                }
+            return droppedCount
 
 ------------------------------------------------------------------------
 -- Convenience
