@@ -44,7 +44,6 @@ module Data.STM.SBChan (
 ) where
 
 import Control.Concurrent.STM.TVar
-import Control.Monad                (when)
 import Control.Monad.STM
 import Data.Typeable                (Typeable)
 
@@ -216,16 +215,11 @@ tryReadSBChan SBC{..} = do
 -- 'False' if the item does not fit.
 tryWriteSBChan :: ItemSize a => SBChan a -> a -> STM Bool
 tryWriteSBChan SBC{..} x = do
-    WriteEnd{..} <- readTVar writeEnd
+    we@WriteEnd{..} <- readTVar writeEnd
     let writeSize' = writeSize + itemSize x
     if writeSize' <= chanLimit
         then do
-            writePtr' <- TList.append writePtr x
-            writeTVar writeEnd $! WriteEnd
-                { writePtr  = writePtr'
-                , writeSize = writeSize'
-                , chanLimit = chanLimit
-                }
+            appendWriteEnd writeEnd we x writeSize'
             return True
         else do
             ReadEnd{..} <- readTVar readEnd
@@ -236,14 +230,18 @@ tryWriteSBChan SBC{..} x = do
                         { readPtr  = readPtr
                         , readSize = 0
                         }
-                    writePtr' <- TList.append writePtr x
-                    writeTVar writeEnd $! WriteEnd
-                        { writePtr  = writePtr'
-                        , writeSize = writeSize''
-                        , chanLimit = chanLimit
-                        }
+                    appendWriteEnd writeEnd we x writeSize''
                     return True
                 else return False
+
+appendWriteEnd :: TVar (WriteEnd a) -> WriteEnd a -> a -> Int -> STM ()
+appendWriteEnd var WriteEnd{..} x writeSize' = do
+    writePtr' <- TList.append writePtr x
+    writeTVar var $! WriteEnd
+        { writePtr  = writePtr'
+        , writeSize = writeSize'
+        , chanLimit = chanLimit
+        }
 
 -- | Variant of 'peekSBChan' which does not 'retry'.  Instead, it returns
 -- 'Nothing' if the channel is empty.
@@ -256,31 +254,22 @@ tryPeekSBChan SBC{..} = do
 -- succeed, and will not 'retry'.
 cramSBChan :: ItemSize a => SBChan a -> a -> STM ()
 cramSBChan SBC{..} x = do
-    WriteEnd{..} <- readTVar writeEnd
+    we@WriteEnd{..} <- readTVar writeEnd
     let writeSize' = writeSize + itemSize x
     if writeSize' <= chanLimit
-        then do
-            writePtr' <- TList.append writePtr x
-            writeTVar writeEnd $! WriteEnd
-                { writePtr  = writePtr'
-                , writeSize = writeSize'
-                , chanLimit = chanLimit
-                }
+        then appendWriteEnd writeEnd we x writeSize'
         else do
             -- Sync with the read end to avoid integer overflow.
             ReadEnd{..} <- readTVar readEnd
-            let writeSize'' = writeSize' - readSize
-            when (readSize /= 0) $
-                writeTVar readEnd $! ReadEnd
-                    { readPtr  = readPtr
-                    , readSize = 0
-                    }
-            writePtr' <- TList.append writePtr x
-            writeTVar writeEnd $! WriteEnd
-                { writePtr  = writePtr'
-                , writeSize = writeSize''
-                , chanLimit = chanLimit
-                }
+            -- Avoid modifying 'readEnd' if we can.
+            if readSize == 0
+                then appendWriteEnd writeEnd we x writeSize'
+                else do
+                    writeTVar readEnd $! ReadEnd
+                        { readPtr  = readPtr
+                        , readSize = 0
+                        }
+                    appendWriteEnd writeEnd we x (writeSize' - readSize)
 
 -- | Like 'writeSBChan', but if the channel is full, drop items from the
 -- beginning of the channel until there is enough room for the new item (or
