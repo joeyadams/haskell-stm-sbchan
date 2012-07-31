@@ -231,16 +231,13 @@ tryWriteSBChan SBC{..} x = do
                         }
                     appendWriteEnd writeEnd we x writeSize''
                     return True
-            if writeSize'' <= chanLimit
+            -- If the item does not fit, but the channel is empty, we want to
+            -- insert it anyway.  readPtr == writePtr is an optimized way to
+            -- test if the channel is empty when we've already read both
+            -- 'readEnd' and 'writeEnd'.
+            if writeSize'' <= chanLimit || readPtr == writePtr
                 then syncAndAppend
-                else do
-                    -- The item does not fit.  However, we want to insert it
-                    -- anyway if the channel is currently empty
-                    -- (see documentation of 'writeSBChan').
-                    empty <- TList.null readPtr
-                    if empty
-                        then syncAndAppend
-                        else return False
+                else return False
 
 appendWriteEnd :: TVar (WriteEnd a) -> WriteEnd a -> a -> Int -> STM ()
 appendWriteEnd var WriteEnd{..} x writeSize' = do
