@@ -183,7 +183,7 @@ peekSBChan = undefined
 -- the limit, then we can't always read an item and put it back.
 --
 -- Note that 'Control.Concurrent.STM.TBQueue.unGetTBQueue' in
--- "Control.Concurrent.STM.TBQueue' is different: it will 'retry' if the queue
+-- "Control.Concurrent.STM.TBQueue" is different: it will 'retry' if the queue
 -- is full.
 unGetSBChan :: ItemSize a => SBChan a -> a -> STM ()
 unGetSBChan = undefined
