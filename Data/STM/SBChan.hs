@@ -90,8 +90,6 @@ data ReadEnd a = ReadEnd
 --
 --      3) 'cramSBChan' was used.
 --
---      4) We've exceeded the limit, and need to sync with the reader.
---
 data WriteEnd a = WriteEnd
     { writePtr  :: !(TList a)
     , writeSize :: !Int
@@ -203,12 +201,48 @@ isEmptySBChan SBC{..} = do
 -- | Variant of 'readSBChan' which does not 'retry'.  Instead, it returns
 -- 'Nothing' if the channel is empty.
 tryReadSBChan :: ItemSize a => SBChan a -> STM (Maybe a)
-tryReadSBChan = undefined
+tryReadSBChan SBC{..} = do
+    ReadEnd{..} <- readTVar readEnd
+    let pop x xs = do
+            writeTVar readEnd $! ReadEnd
+                { readPtr  = xs
+                , readSize = readSize + itemSize x
+                }
+            return (Just x)
+    TList.uncons (return Nothing) pop readPtr
 
 -- | Variant of 'writeSBChan' which does not 'retry'.  Instead, it returns
 -- 'False' if the item does not fit.
 tryWriteSBChan :: ItemSize a => SBChan a -> a -> STM Bool
-tryWriteSBChan = undefined
+tryWriteSBChan SBC{..} x = do
+    WriteEnd{..} <- readTVar writeEnd
+    let writeSize' = writeSize + itemSize x
+    if writeSize' <= chanLimit
+        then do
+            writePtr' <- TList.append writePtr x
+            writeTVar writeEnd $! WriteEnd
+                { writePtr  = writePtr'
+                , writeSize = writeSize'
+                , chanLimit = chanLimit
+                }
+            return True
+        else do
+            ReadEnd{..} <- readTVar readEnd
+            let writeSize'' = writeSize' - readSize
+            if writeSize'' <= chanLimit
+                then do
+                    writeTVar readEnd $! ReadEnd
+                        { readPtr  = readPtr
+                        , readSize = 0
+                        }
+                    writePtr' <- TList.append writePtr x
+                    writeTVar writeEnd $! WriteEnd
+                        { writePtr  = writePtr'
+                        , writeSize = writeSize''
+                        , chanLimit = chanLimit
+                        }
+                    return True
+                else return False
 
 -- | Variant of 'peekSBChan' which does not 'retry'.  Instead, it returns
 -- 'Nothing' if the channel is empty.
