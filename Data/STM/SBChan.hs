@@ -44,6 +44,7 @@ module Data.STM.SBChan (
 ) where
 
 import Control.Concurrent.STM.TVar
+import Control.Monad                (when)
 import Control.Monad.STM
 import Data.Typeable                (Typeable)
 
@@ -247,12 +248,39 @@ tryWriteSBChan SBC{..} x = do
 -- | Variant of 'peekSBChan' which does not 'retry'.  Instead, it returns
 -- 'Nothing' if the channel is empty.
 tryPeekSBChan :: SBChan a -> STM (Maybe a)
-tryPeekSBChan = undefined
+tryPeekSBChan SBC{..} = do
+    ReadEnd{..} <- readTVar readEnd
+    TList.uncons (return Nothing) (\x _xs -> return (Just x)) readPtr
 
 -- | Like 'writeSBChan', but ignore the channel size limit.  This will always
 -- succeed, and will not 'retry'.
 cramSBChan :: ItemSize a => SBChan a -> a -> STM ()
-cramSBChan = undefined
+cramSBChan SBC{..} x = do
+    WriteEnd{..} <- readTVar writeEnd
+    let writeSize' = writeSize + itemSize x
+    if writeSize' <= chanLimit
+        then do
+            writePtr' <- TList.append writePtr x
+            writeTVar writeEnd $! WriteEnd
+                { writePtr  = writePtr'
+                , writeSize = writeSize'
+                , chanLimit = chanLimit
+                }
+        else do
+            -- Sync with the read end to avoid integer overflow.
+            ReadEnd{..} <- readTVar readEnd
+            let writeSize'' = writeSize' - readSize
+            when (readSize /= 0) $
+                writeTVar readEnd $! ReadEnd
+                    { readPtr  = readPtr
+                    , readSize = 0
+                    }
+            writePtr' <- TList.append writePtr x
+            writeTVar writeEnd $! WriteEnd
+                { writePtr  = writePtr'
+                , writeSize = writeSize''
+                , chanLimit = chanLimit
+                }
 
 -- | Like 'writeSBChan', but if the channel is full, drop items from the
 -- beginning of the channel until there is enough room for the new item (or
