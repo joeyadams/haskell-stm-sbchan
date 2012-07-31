@@ -4,9 +4,12 @@
 module Data.STM.SBChan (
     -- * SBChan
     SBChan,
-    ItemSize(itemSize),
     newSBChan,
     newSBChanIO,
+
+    -- * Item sizes
+    ItemSize(..),
+    SBCItem(..),
 
     -- * Reading and writing
     readSBChan,
@@ -223,3 +226,14 @@ setLimitSBChan = undefined
 -- limit is satisfied, or until there is only one item left in the channel.
 satisfyLimitSBChan :: ItemSize a => SBChan a -> STM ()
 satisfyLimitSBChan = undefined
+
+------------------------------------------------------------------------
+-- Convenience
+
+-- | Wrapper for items where @'itemSize' item = 1@.  This helps you use
+-- 'SBChan' as a channel with a maximum /number/ of items.
+newtype SBCItem a = SBCItem { unSBCItem :: a }
+    deriving Typeable
+
+instance ItemSize (SBCItem a) where
+    itemSize _ = 1
