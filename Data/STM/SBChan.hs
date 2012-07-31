@@ -165,7 +165,11 @@ clearSBChan SBC{..} = do
 
 -- | Read the next item from the channel.  'retry' if the channel is empty.
 readSBChan :: ItemSize a => SBChan a -> STM a
-readSBChan = undefined
+readSBChan sbc = do
+    m <- tryReadSBChan sbc
+    case m of
+        Nothing -> retry
+        Just x  -> return x
 
 -- | Write an item to the channel.  'retry' if the item does not fit.
 --
@@ -174,12 +178,19 @@ readSBChan = undefined
 -- anyway.  This is to prevent a large item from causing the application to
 -- deadlock.
 writeSBChan :: ItemSize a => SBChan a -> a -> STM ()
-writeSBChan = undefined
+writeSBChan sbc x = do
+    ok <- tryWriteSBChan sbc x
+    if ok then return ()
+          else retry
 
 -- | Get the next item from the channel without removing it.  'retry' if the
 -- channel is empty.
 peekSBChan :: SBChan a -> STM a
-peekSBChan = undefined
+peekSBChan sbc = do
+    m <- tryPeekSBChan sbc
+    case m of
+        Nothing -> retry
+        Just x  -> return x
 
 -- | Put an item back on the channel, where it will be the next item read.
 --
