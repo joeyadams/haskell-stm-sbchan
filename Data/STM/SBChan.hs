@@ -344,11 +344,19 @@ dropItemsExceptLast start end quota =
 
 -- | Get the current limit on total size of items in the channel.
 getLimitSBChan :: SBChan a -> STM Int
-getLimitSBChan = undefined
+getLimitSBChan SBC{..} = do
+    WriteEnd{..} <- readTVar writeEnd
+    return chanLimit
 
 -- | Set the total size limit.  If the channel exceeds the new limit, too bad.
 setLimitSBChan :: SBChan a -> Int -> STM ()
-setLimitSBChan = undefined
+setLimitSBChan SBC{..} newLimit = do
+    WriteEnd{..} <- readTVar writeEnd
+    writeTVar writeEnd $! WriteEnd
+        { writePtr  = writePtr
+        , writeSize = writeSize
+        , chanLimit = newLimit
+        }
 
 -- | Drop items from the beginning of the channel until the channel's size
 -- limit is satisfied, or until there is only one item left in the channel.
