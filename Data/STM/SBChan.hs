@@ -368,6 +368,8 @@ getLimitSBChan SBC{..} = do
     return chanLimit
 
 -- | Set the total size limit.  If the channel exceeds the new limit, too bad.
+-- 'setLimitSBChan' will not remove any items to satisfy the limit.
+-- Use 'satisfyLimitSBChan' afterward if you want that to happen.
 setLimitSBChan :: SBChan a -> Int -> STM ()
 setLimitSBChan SBC{..} newLimit = do
     WriteEnd{..} <- readTVar writeEnd
